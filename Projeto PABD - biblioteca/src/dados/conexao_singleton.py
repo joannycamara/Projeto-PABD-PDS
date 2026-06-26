@@ -6,13 +6,6 @@ from dados.conexao_factory import ConexaoFactory
 
 
 class ConexaoSingleton:
-    """
-    Singleton responsavel por manter uma unica conexao ativa.
-
-    A primeira chamada cria a conexao usando a Factory.
-    As proximas chamadas reaproveitam a mesma conexao.
-    """
-
     _conexao: Optional[mysql.connector.MySQLConnection] = None
 
     @classmethod

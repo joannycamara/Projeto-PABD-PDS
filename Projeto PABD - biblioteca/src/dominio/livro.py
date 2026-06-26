@@ -4,10 +4,11 @@ from typing import Optional
 
 @dataclass
 class Livros:
-    """Representa a entidade de dominio Produto."""
+    """Representa a entidade de domínio Livros."""
 
     id: Optional[int]
     titulo: str
     autor: str
     genero: str
-    disponivel: bool
+    isbn: str
+    disponivel: bool = True

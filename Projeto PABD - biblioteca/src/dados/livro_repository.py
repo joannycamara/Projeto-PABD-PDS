@@ -2,150 +2,154 @@ from typing import Optional
 
 import mysql.connector
 
-from src.dominio.livro import Livros
+from dominio.livro import Livros
 
 
 class LivrosRepository:
-    """Camada data: faz o acesso ao banco e executa SQL."""
+    """Camada de dados: acesso ao banco para a tabela livros."""
 
     def __init__(self, conexao: mysql.connector.MySQLConnection) -> None:
         self.conexao = conexao
 
-    def adicionar(self, livros: Livros) -> int:
+    # ------------------------------------------------------------------
+    # Escrita
+    # ------------------------------------------------------------------
 
+    def adicionar(self, livro: Livros) -> int:
         cursor = self.conexao.cursor()
 
         cursor.execute(
             """
-            INSERT INTO livros
-            (titulo, autor, genero, disponivel)
-            VALUES (%s, %s, %s, %s)
+            INSERT INTO livros (titulo, autor, genero, isbn, disponivel)
+            VALUES (%s, %s, %s, %s, %s)
             """,
-            (
-                livros.titulo,
-                livros.autor,
-                livros.genero,
-                livros.disponivel,
-            ),
+            (livro.titulo, livro.autor, livro.genero, livro.isbn, livro.disponivel),
         )
 
         self.conexao.commit()
-
         novo_id = int(cursor.lastrowid)
-
         cursor.close()
-
         return novo_id
 
-    def listar_todos(self) -> list[Livros]:
-
-        cursor = self.conexao.cursor(dictionary=True)
-
-        cursor.execute(
-            """
-            SELECT
-                id,
-                titulo,
-                autor,
-                genero,
-                disponivel
-            FROM livros
-            ORDER BY id
-            """
-        )
-
-        linhas = cursor.fetchall()
-
-        cursor.close()
-
-        return [
-            Livros(
-                id=linha["id"],
-                titulo=linha["titulo"],
-                autor=linha["autor"],
-                genero=linha["genero"],
-                disponivel=bool(linha["disponivel"]),
-            )
-            for linha in linhas
-        ]
-
-    def buscar_por_id(self, id_livros: int) -> Optional[Livros]:
-
-        cursor = self.conexao.cursor(dictionary=True)
-
-        cursor.execute(
-            """
-            SELECT
-                id,
-                titulo,
-                autor,
-                genero,
-                disponivel
-            FROM livros
-            WHERE id = %s
-            """,
-            (id_livros,),
-        )
-
-        linha = cursor.fetchone()
-
-        cursor.close()
-
-        if linha is None:
-            return None
-
-        return Livros(
-            id=linha["id"],
-            titulo=linha["titulo"],
-            autor=linha["autor"],
-            genero=linha["genero"],
-            disponivel=bool(linha["disponivel"]),
-        )
-
-    def atualizar(self, livros: Livros) -> bool:
-
+    def atualizar(self, livro: Livros) -> bool:
         cursor = self.conexao.cursor()
 
         cursor.execute(
             """
             UPDATE livros
-            SET
-                titulo = %s,
-                autor = %s,
-                genero = %s,
-                disponivel = %s
+            SET titulo = %s, autor = %s, genero = %s, isbn = %s, disponivel = %s
             WHERE id = %s
             """,
-            (
-                livros.titulo,
-                livros.autor,
-                livros.genero,
-                livros.disponivel,
-                livros.id,
-            ),
+            (livro.titulo, livro.autor, livro.genero, livro.isbn, livro.disponivel, livro.id),
         )
 
         self.conexao.commit()
-
         afetados = cursor.rowcount > 0
-
         cursor.close()
-
         return afetados
 
-    def remover(self, id_livros: int) -> bool:
-
+    def remover(self, id_livro: int) -> bool:
         cursor = self.conexao.cursor()
 
-        cursor.execute(
-            "DELETE FROM livros WHERE id = %s",
-            (id_livros,),
-        )
+        cursor.execute("DELETE FROM livros WHERE id = %s", (id_livro,))
 
         self.conexao.commit()
-
         afetados = cursor.rowcount > 0
+        cursor.close()
+        return afetados
 
+    # ------------------------------------------------------------------
+    # Leitura
+    # ------------------------------------------------------------------
+
+    def listar_todos(self) -> list[Livros]:
+        cursor = self.conexao.cursor(dictionary=True)
+
+        cursor.execute(
+            "SELECT id, titulo, autor, genero, isbn, disponivel FROM livros ORDER BY titulo"
+        )
+
+        linhas = cursor.fetchall()
         cursor.close()
 
-        return afetados
+        return [self._mapear(linha) for linha in linhas]
+
+    def listar_por_disponibilidade(self, disponivel: bool) -> list[Livros]:
+        """Retorna livros filtrados por disponibilidade. Usado em US09."""
+        cursor = self.conexao.cursor(dictionary=True)
+
+        cursor.execute(
+            """
+            SELECT id, titulo, autor, genero, isbn, disponivel
+            FROM livros
+            WHERE disponivel = %s
+            ORDER BY titulo
+            """,
+            (disponivel,),
+        )
+
+        linhas = cursor.fetchall()
+        cursor.close()
+
+        return [self._mapear(linha) for linha in linhas]
+
+    def buscar_por_id(self, id_livro: int) -> Optional[Livros]:
+        cursor = self.conexao.cursor(dictionary=True)
+
+        cursor.execute(
+            "SELECT id, titulo, autor, genero, isbn, disponivel FROM livros WHERE id = %s",
+            (id_livro,),
+        )
+
+        linha = cursor.fetchone()
+        cursor.close()
+
+        return self._mapear(linha) if linha else None
+
+    def buscar_por_isbn(self, isbn: str) -> Optional[Livros]:
+        """Usado em US12 (evitar ISBN duplicado) e US13 (validar edição)."""
+        cursor = self.conexao.cursor(dictionary=True)
+
+        cursor.execute(
+            "SELECT id, titulo, autor, genero, isbn, disponivel FROM livros WHERE isbn = %s",
+            (isbn,),
+        )
+
+        linha = cursor.fetchone()
+        cursor.close()
+
+        return self._mapear(linha) if linha else None
+
+    def buscar_por_titulo_ou_autor(self, termo: str) -> list[Livros]:
+        """Busca parcial por título ou autor. Usado em US04."""
+        cursor = self.conexao.cursor(dictionary=True)
+
+        cursor.execute(
+            """
+            SELECT id, titulo, autor, genero, isbn, disponivel
+            FROM livros
+            WHERE titulo LIKE %s OR autor LIKE %s
+            ORDER BY titulo
+            """,
+            (f"%{termo}%", f"%{termo}%"),
+        )
+
+        linhas = cursor.fetchall()
+        cursor.close()
+
+        return [self._mapear(linha) for linha in linhas]
+
+    # ------------------------------------------------------------------
+    # Mapeamento interno
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _mapear(linha: dict) -> Livros:
+        return Livros(
+            id=linha["id"],
+            titulo=linha["titulo"],
+            autor=linha["autor"],
+            genero=linha["genero"],
+            isbn=linha["isbn"],
+            disponivel=bool(linha["disponivel"]),
+        )
